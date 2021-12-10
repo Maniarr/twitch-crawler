@@ -1,0 +1,21 @@
+[package]
+name = "twitch-crawler"
+version = "0.1.0"
+authors = ["Maniarr <nicolas@maniarr.fr>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix = "0.11"
+actix-rt = { version = "2.2.0", default-features = false }
+chrono = "*"
+time = "^0.3"
+warp10 = { path = "./warp10.rs" }
+isahc = { version = "*", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "*"
+twitch-rs = { path = "./twitch-rs" }
+tera = "*"
+openssl = { version = "*", features = ["vendored"] }

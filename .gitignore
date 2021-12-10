@@ -1,0 +1,4 @@
+/target
+.warp10_write_token
+config.yml
+release.sh

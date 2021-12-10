@@ -1,0 +1,32 @@
+services:
+  warp10:
+    image: warp10io/warp10:2.9.0
+    volumes:
+      - warp10-data:/data
+    ports:
+      - 58080:8080
+      - 58081:8081
+
+  crawler:
+    build: .
+    environment:
+      - TWITCH_CLIENT_ID=wkpecccoi7na22y4p2x9f1ek2unkyz
+      - TWITCH_CLIENT_SECRET=7zb3qq2suy922e46x81a638b6k6ix7
+      - WARP10_URL=http://warp10:8080
+      - WARP10_WRITE_TOKEN_FILE=/run/secrets/warp10_write_token
+      - WARP10_PREFIX=twitch
+      - EVENT_NAME=justiciersducoeur_2021
+      - STREAMERS=trinity,maghla,kayanetv,jeeltv,gobgg,gius,alphacast,angledroit,avamind,bagherajones,bytell2,gom4rt,horty_,jeanmassiet,littlebigwhale,tonton
+    secrets:
+      - warp10_write_token
+
+volumes:
+  warp10-data:
+
+secrets:
+  warp10_write_token:
+    file: ./.warp10_write_token
+
+    
+## Write Token: oIbXRQspI__bBfa__2BWMuJs.zTZ_pq7UfdiEBjwTNNAK_Q_8BW6SOFfsTl0dWu0YdOiR1Sz9JUWrbT5dH1ike0q8YNzoGgc6Nu8AWt23zNQMT3XsskzRDA2Ygv98V1Q
+## Read Token: z9Kbs_X_bLsP1bGU2DY7sgdtetbIMA2Tqhi8kK7HOsViLqyfEWwEbupVbOQfDFFX6J0VhLcjDRXaZ8ZY.AM0veRAXEPRhXEeli5syX9ftV3U6EDQLxAUz0aMt_G5QGKH5VyJs2OvBwq8yTBWMS3pc2f_6aWmf8hhiaRsH4XRyE6I2rQpd9beE.
