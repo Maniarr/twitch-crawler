@@ -9,20 +9,22 @@ use twitch_rs::{
     games,
 };
 
-#[derive(Debug, Deserialize)]
+use isahc::ReadResponseExt;
+
+#[derive(Debug, Deserialize, Clone)]
 struct TwitchConfig {
     client_id: String,
     client_secret: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct Warp10Config {
     url: String,
     write_token: String,
     prefix: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct Config {
     twitch: TwitchConfig,
     warp10: Warp10Config,
@@ -59,11 +61,29 @@ fn get_config() -> Result<Config, ()> {
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct Emote {
+    id: String,
+    emote: String,
+    amount: i32
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StreamElementsStats {
+    channel: String,
+    total_messages: i32,
+    bttv_emotes: Vec<Emote>,
+    twitch_emotes: Vec<Emote>,
+}
+
 #[actix::main]
 async fn main() {
-    let config = get_config().expect("Missing configuration");
+    let config_original = get_config().expect("Missing configuration");
 
-    let forever = actix_rt::spawn(async {
+    let config = config_original.clone();
+
+    let forever_twitch = actix_rt::spawn(async {
         let mut api = TwitchApi::new(
             config.twitch.client_id,
             config.twitch.client_secret,
@@ -82,7 +102,7 @@ async fn main() {
 
             let timestamp = OffsetDateTime::now_utc();
 
-            println!("Run at {}", timestamp);
+            println!("Run twitch at {}", timestamp);
 
             for streamers in config.streamers.chunks(100) {
                 match streams::get_from_users_login(
@@ -151,5 +171,107 @@ async fn main() {
         }
     });
 
-    forever.await;
+
+    let config2 = config_original.clone();
+
+    let forever_streamelements = actix_rt::spawn(async {
+        let warp10_client = warp10::Client::new(&config2.warp10.url).expect("Failed to build warp10 client");
+        let writer = warp10_client.get_writer(config2.warp10.write_token);
+
+        let mut interval = actix_rt::time::interval(Duration::from_secs(60));
+      
+        loop {
+            interval.tick().await;
+            let mut metrics = Vec::new();
+
+            let timestamp = OffsetDateTime::now_utc();
+
+            println!("Run streamelements at {}", timestamp);
+
+            let prefix = config2.warp10.prefix.clone();
+            let event_name = config2.event_name.clone();
+
+            for streamer in &config2.streamers {
+                let mut response = isahc::get(format!("https://api.streamelements.com/kappa/v2/chatstats/{}/stats?limit=100", &streamer));
+
+                match response {
+                    Ok(mut response) => {
+                        match response.json() {
+                            Ok(StreamElementsStats { channel, total_messages, bttv_emotes, twitch_emotes }) => {
+                                metrics.push(
+                                    warp10::Data::new(
+                                        timestamp,
+                                        None,
+                                        format!("{}.total_messages", &prefix),
+                                        vec![
+                                            warp10::Label::new("event_name", &event_name),
+                                            warp10::Label::new("user_name", &streamer),
+                                        ],
+                                        warp10::Value::Int(total_messages)
+                                    )
+                                );
+                                
+                                metrics.extend(
+                                    bttv_emotes.iter().map(|emote| {
+                                        warp10::Data::new(
+                                            timestamp,
+                                            None,
+                                            format!("{}.emotes", &prefix),
+                                            vec![
+                                                warp10::Label::new("event_name", &event_name),
+                                                warp10::Label::new("type", "bttv"),
+                                                warp10::Label::new("emote_id", &emote.id),
+                                                warp10::Label::new("emote_name", &emote.emote),
+                                                warp10::Label::new("user_name", &streamer),
+                                            ],
+                                            warp10::Value::Int(emote.amount)
+                                        )
+                                    })
+                                );
+
+                                metrics.extend(
+                                    twitch_emotes.iter().map(|emote| {
+                                        warp10::Data::new(
+                                            timestamp,
+                                            None,
+                                            format!("{}.emotes", &prefix),
+                                            vec![
+                                                warp10::Label::new("event_name", &event_name),
+                                                warp10::Label::new("type", "twitch"),
+                                                warp10::Label::new("emote_id", &emote.id),
+                                                warp10::Label::new("emote_name", &emote.emote),
+                                                warp10::Label::new("user_name", &streamer),
+                                            ],
+                                            warp10::Value::Int(emote.amount)
+                                        )
+                                    })
+                                )
+                            },
+                            Err(error) => {
+                                eprintln!("{:?}", &error);
+                            }
+                        }
+                    },
+                    Err(error) => {
+                        eprintln!("{:?}", &error);
+                    }
+                }
+            }
+
+            let metrics_count = metrics.len();
+
+            match writer.post_sync(metrics) {
+                Ok(_) => {
+                    println!("{} metrics wrote to warp10", metrics_count);
+                },
+                Err(error) => {
+                    eprintln!("Error to write metrics: {:?}", error);
+                }
+            }
+        }
+    });
+
+    forever_streamelements.await;
+
+    forever_twitch.await;
 }
