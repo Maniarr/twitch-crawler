@@ -211,41 +211,41 @@ async fn main() {
                                     )
                                 );
                                 
-                                metrics.extend(
-                                    bttv_emotes.iter().map(|emote| {
-                                        warp10::Data::new(
-                                            timestamp,
-                                            None,
-                                            format!("{}.emotes", &prefix),
-                                            vec![
-                                                warp10::Label::new("event_name", &event_name),
-                                                warp10::Label::new("type", "bttv"),
-                                                warp10::Label::new("emote_id", &emote.id),
-                                                warp10::Label::new("emote_name", &emote.emote),
-                                                warp10::Label::new("user_name", &streamer),
-                                            ],
-                                            warp10::Value::Int(emote.amount)
-                                        )
-                                    })
-                                );
+                                // metrics.extend(
+                                //     bttv_emotes.iter().map(|emote| {
+                                //         warp10::Data::new(
+                                //             timestamp,
+                                //             None,
+                                //             format!("{}.emotes", &prefix),
+                                //             vec![
+                                //                 warp10::Label::new("event_name", &event_name),
+                                //                 warp10::Label::new("type", "bttv"),
+                                //                 warp10::Label::new("emote_id", &emote.id),
+                                //                 warp10::Label::new("emote_name", &emote.emote),
+                                //                 warp10::Label::new("user_name", &streamer),
+                                //             ],
+                                //             warp10::Value::Int(emote.amount)
+                                //         )
+                                //     })
+                                // );
 
-                                metrics.extend(
-                                    twitch_emotes.iter().map(|emote| {
-                                        warp10::Data::new(
-                                            timestamp,
-                                            None,
-                                            format!("{}.emotes", &prefix),
-                                            vec![
-                                                warp10::Label::new("event_name", &event_name),
-                                                warp10::Label::new("type", "twitch"),
-                                                warp10::Label::new("emote_id", &emote.id),
-                                                warp10::Label::new("emote_name", &emote.emote),
-                                                warp10::Label::new("user_name", &streamer),
-                                            ],
-                                            warp10::Value::Int(emote.amount)
-                                        )
-                                    })
-                                )
+                                // metrics.extend(
+                                //     twitch_emotes.iter().map(|emote| {
+                                //         warp10::Data::new(
+                                //             timestamp,
+                                //             None,
+                                //             format!("{}.emotes", &prefix),
+                                //             vec![
+                                //                 warp10::Label::new("event_name", &event_name),
+                                //                 warp10::Label::new("type", "twitch"),
+                                //                 warp10::Label::new("emote_id", &emote.id),
+                                //                 warp10::Label::new("emote_name", &emote.emote),
+                                //                 warp10::Label::new("user_name", &streamer),
+                                //             ],
+                                //             warp10::Value::Int(emote.amount)
+                                //         )
+                                //     })
+                                // )
                             },
                             Err(error) => {
                                 eprintln!("{:?}", &error);
