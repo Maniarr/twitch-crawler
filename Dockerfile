@@ -1,4 +1,4 @@
-FROM rust:1.57-slim-buster as builder
+FROM rust:1.58-slim-buster as builder
 
 RUN apt-get update
 RUN apt-get install -y libssl-dev build-essential zlib1g-dev 
