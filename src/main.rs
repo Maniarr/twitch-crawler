@@ -64,7 +64,7 @@ async fn main() {
         warp10::Client::new(&config.warp10.url).expect("Failed to build warp10 client");
     let writer = warp10_client.get_writer(config.warp10.write_token);
 
-    let mut interval = actix_rt::time::interval(Duration::from_secs(20));
+    let mut interval = actix_rt::time::interval(Duration::from_secs(15));
     let mut games_mapping: HashMap<String, String> = HashMap::new();
 
     let mut filter: streams::StreamFilter = serde_json::from_str(
