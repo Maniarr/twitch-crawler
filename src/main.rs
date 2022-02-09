@@ -5,8 +5,6 @@ use time::OffsetDateTime;
 
 use twitch_rs::{games, streams, TwitchApi};
 
-use isahc::ReadResponseExt;
-
 #[derive(Debug, Deserialize, Clone)]
 struct TwitchConfig {
     client_id: String,
@@ -25,7 +23,6 @@ struct Config {
     twitch: TwitchConfig,
     warp10: Warp10Config,
     event_name: String,
-    streamers: Vec<String>,
 }
 
 fn get_config() -> Result<Config, ()> {
@@ -49,37 +46,14 @@ fn get_config() -> Result<Config, ()> {
                     .expect("Missing env WARP10_WRITE_TOKEN"),
                 prefix: std::env::var("WARP10_PREFIX").expect("Missing env WARP10_PREFIX"),
             },
-            event_name: std::env::var("EVENT_NAME").expect("Missing env EVENT_NAME"),
-            streamers: std::env::var("STREAMERS")
-                .expect("Missing env STREAMERS")
-                .split(',')
-                .map(|s| s.to_string())
-                .collect(),
+            event_name: std::env::var("EVENT_NAME").expect("Missing env EVENT_NAME")
         })
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct Emote {
-    id: String,
-    emote: String,
-    amount: i32,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct StreamElementsStats {
-    channel: String,
-    total_messages: i32,
-    bttv_emotes: Vec<Emote>,
-    twitch_emotes: Vec<Emote>,
-}
-
 #[actix::main]
 async fn main() {
-    let config_original = get_config().expect("Missing configuration");
-
-    let config = config_original.clone();
+    let config = get_config().expect("Missing configuration");
 
     let mut api = TwitchApi::new(config.twitch.client_id, config.twitch.client_secret)
         .expect("Failed to create api client");
@@ -90,8 +64,12 @@ async fn main() {
         warp10::Client::new(&config.warp10.url).expect("Failed to build warp10 client");
     let writer = warp10_client.get_writer(config.warp10.write_token);
 
-    let mut interval = actix_rt::time::interval(Duration::from_secs(10));
+    let mut interval = actix_rt::time::interval(Duration::from_secs(20));
     let mut games_mapping: HashMap<String, String> = HashMap::new();
+
+    let mut filter: streams::StreamFilter = serde_json::from_str(
+        &std::env::var("FILTERS").expect("Missing env FILTERS")
+    ).expect("FILTERS is not a valid JSON");
 
     loop {
         interval.tick().await;
@@ -99,19 +77,24 @@ async fn main() {
         let timestamp = OffsetDateTime::now_utc();
 
         println!("Run twitch at {}", timestamp);
+        let mut is_finished = false;
 
-        for streamers in config.streamers.chunks(100) {
-            match streams::get_from_users_login(
+        while !is_finished {
+            match streams::get(
                 &api,
-                &streamers.iter().map(|i| i.clone()).collect(),
-                100,
-                None,
-                None,
+                &filter
             )
-            .await
-            {
+            .await {
                 Ok(responses) => {
                     let mut metrics = Vec::new();
+
+                    if responses.data.len() == filter.first.unwrap_or(20) as usize {
+                        is_finished = responses.pagination.cursor.is_none();
+                        filter.after = responses.pagination.cursor.clone();
+                    } else {
+                        is_finished = true;
+                        filter.after = None;
+                    }
 
                     for stream in responses.data {
                         let game_name = if let Some(name) = games_mapping.get(&stream.game_id) {
