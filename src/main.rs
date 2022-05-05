@@ -23,6 +23,7 @@ struct Config {
     twitch: TwitchConfig,
     warp10: Warp10Config,
     event_name: String,
+    minimum_viewers: i32,
 }
 
 fn get_config() -> Result<Config, ()> {
@@ -46,7 +47,8 @@ fn get_config() -> Result<Config, ()> {
                     .expect("Missing env WARP10_WRITE_TOKEN"),
                 prefix: std::env::var("WARP10_PREFIX").expect("Missing env WARP10_PREFIX"),
             },
-            event_name: std::env::var("EVENT_NAME").expect("Missing env EVENT_NAME")
+            event_name: std::env::var("EVENT_NAME").expect("Missing env EVENT_NAME"),
+            minimum_viewers: std::env::var("MINIMUM_VIEWERS").unwrap_or("0".to_string()).parse().expect("Wrong format for MINIMUM_VIEWERS")
         })
     }
 }
@@ -118,6 +120,11 @@ async fn main() {
 
                             name
                         };
+
+                        if stream.viewer_count < config.minimum_viewers {
+                            is_finished = true;
+                            continue;
+                        }
 
                         metrics.push(warp10::Data::new(
                             timestamp,
