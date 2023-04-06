@@ -20,7 +20,7 @@ pub struct HelixStream {
 
 impl super::traits::HelixModel for HelixStream {}
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct StreamFilter {
     pub after: Option<String>,

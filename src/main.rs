@@ -53,6 +53,29 @@ fn get_config() -> Result<Config, ()> {
     }
 }
 
+fn chunk_filters(filter: streams::StreamFilter) -> Vec<streams::StreamFilter> {
+    let mut filters = Vec::new();
+
+    match filter.clone().user_logins {
+        Some(user_logins) => {
+            if user_logins.len() > 100 {
+                for chunk in user_logins.chunks(100) {
+                    let mut chunked_filter = filter.clone();
+
+                    chunked_filter.user_logins = Some(chunk.to_vec());
+
+                    filters.push(chunked_filter);
+                }
+            } else {
+                filters.push(filter);
+            }
+        },
+        _ => {}
+    }
+
+    return filters
+}
+
 #[actix::main]
 async fn main() {
     let config = get_config().expect("Missing configuration");
@@ -69,9 +92,11 @@ async fn main() {
     let mut interval = actix_rt::time::interval(Duration::from_secs(15));
     let mut games_mapping: HashMap<String, String> = HashMap::new();
 
-    let mut filter: streams::StreamFilter = serde_json::from_str(
+    let filter: streams::StreamFilter = serde_json::from_str(
         &std::env::var("FILTERS").expect("Missing env FILTERS")
     ).expect("FILTERS is not a valid JSON");
+
+    let filters = chunk_filters(filter);
 
     loop {
         interval.tick().await;
@@ -79,84 +104,88 @@ async fn main() {
         let timestamp = OffsetDateTime::now_utc();
 
         println!("Run twitch at {}", timestamp);
-        let mut is_finished = false;
 
-        while !is_finished {
-            match streams::get(
-                &api,
-                &filter
-            )
-            .await {
-                Ok(responses) => {
-                    let mut metrics = Vec::new();
+        for selected_filter in &filters {
+            let mut filter = selected_filter.clone();
+            let mut is_finished = false;
 
-                    if responses.data.len() == filter.first.unwrap_or(20) as usize {
-                        is_finished = responses.pagination.cursor.is_none();
-                        filter.after = responses.pagination.cursor.clone();
-                    } else {
-                        is_finished = true;
-                        filter.after = None;
-                    }
+            while !is_finished {
+                match streams::get(
+                    &api,
+                    &filter
+                )
+                .await {
+                    Ok(responses) => {
+                        let mut metrics = Vec::new();
 
-                    for stream in responses.data {
-                        let game_name = if let Some(name) = games_mapping.get(&stream.game_id) {
-                            name.clone()
+                        if responses.data.len() == filter.first.unwrap_or(20) as usize {
+                            is_finished = responses.pagination.cursor.is_none();
+                            filter.after = responses.pagination.cursor.clone();
                         } else {
-                            let name = if let Ok(response) =
-                                games::get(&api, &vec![stream.game_id.clone()]).await
-                            {
-                                if let Some(game) = response.data.get(0) {
-                                    game.name.clone()
+                            is_finished = true;
+                            filter.after = None;
+                        }
+
+                        for stream in responses.data {
+                            let game_name = if let Some(name) = games_mapping.get(&stream.game_id) {
+                                name.clone()
+                            } else {
+                                let name = if let Ok(response) =
+                                    games::get(&api, &vec![stream.game_id.clone()]).await
+                                {
+                                    if let Some(game) = response.data.get(0) {
+                                        game.name.clone()
+                                    } else {
+                                        dbg!(&stream);
+                                        "Pas de catégorie".to_string()
+                                    }
                                 } else {
                                     dbg!(&stream);
                                     "Pas de catégorie".to_string()
-                                }
-                            } else {
-                                dbg!(&stream);
-                                "Pas de catégorie".to_string()
+                                };
+
+                                games_mapping.insert(stream.game_id.clone(), name.clone());
+
+                                name
                             };
 
-                            games_mapping.insert(stream.game_id.clone(), name.clone());
+                            if stream.viewer_count < config.minimum_viewers {
+                                is_finished = true;
+                                continue;
+                            }
 
-                            name
-                        };
-
-                        if stream.viewer_count < config.minimum_viewers {
-                            is_finished = true;
-                            continue;
+                            metrics.push(warp10::Data::new(
+                                timestamp,
+                                None,
+                                format!("{}.viewers", &config.warp10.prefix),
+                                vec![
+                                    warp10::Label::new("event_name", &config.event_name),
+                                    warp10::Label::new("stream_id", &stream.id),
+                                    warp10::Label::new("game_id", &stream.game_id),
+                                    warp10::Label::new("game_name", &game_name),
+                                    warp10::Label::new("user_id", &stream.user_id),
+                                    warp10::Label::new("user_name", &stream.user_login),
+                                ],
+                                warp10::Value::Int(stream.viewer_count),
+                            ));
                         }
 
-                        metrics.push(warp10::Data::new(
-                            timestamp,
-                            None,
-                            format!("{}.viewers", &config.warp10.prefix),
-                            vec![
-                                warp10::Label::new("event_name", &config.event_name),
-                                warp10::Label::new("stream_id", &stream.id),
-                                warp10::Label::new("game_id", &stream.game_id),
-                                warp10::Label::new("game_name", &game_name),
-                                warp10::Label::new("user_id", &stream.user_id),
-                                warp10::Label::new("user_name", &stream.user_login),
-                            ],
-                            warp10::Value::Int(stream.viewer_count),
-                        ));
-                    }
+                        let metrics_count = metrics.len();
 
-                    let metrics_count = metrics.len();
-
-                    match writer.post_sync(metrics) {
-                        Ok(_) => {
-                            println!("{} metrics wrote to warp10", metrics_count);
-                        }
-                        Err(error) => {
-                            eprintln!("Error to write metrics: {:?}", error);
+                        match writer.post_sync(metrics) {
+                            Ok(_) => {
+                                println!("{} metrics wrote to warp10", metrics_count);
+                            }
+                            Err(error) => {
+                                eprintln!("Error to write metrics: {:?}", error);
+                            }
                         }
                     }
-                }
-                Err(error) => {
-                    eprintln!("{}", error);
-                }
-            };
+                    Err(error) => {
+                        eprintln!("{}", error);
+                    }
+                };
+            }
         }
     }
 }
