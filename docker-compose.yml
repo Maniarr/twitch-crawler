@@ -1,67 +1,23 @@
 services:
   warp10:
-    image: warp10io/warp10:2.9.0
+    image: warp10io/warp10:2.11.1
     volumes:
       - warp10-data:/data
     ports:
-      - 58080:8080
-      - 58081:8081
+      - 127.0.0.1:8080:8080
+      - 127.0.0.1:8081:8081
 
-  crawler-lol:
+  crawler:
     build: .
     environment:
-      - TWITCH_CLIENT_ID=wkpecccoi7na22y4p2x9f1ek2unkyz
-      - TWITCH_CLIENT_SECRET=7zb3qq2suy922e46x81a638b6k6ix7
+      - TWITCH_CLIENT_ID=$TWITCH_CLIENT_ID
+      - TWITCH_CLIENT_SECRET=$TWITCH_CLIENT_SECRET
       - WARP10_URL=http://warp10:8080
-      - WARP10_WRITE_TOKEN_FILE=/run/secrets/warp10_write_token
-      - WARP10_PREFIX=twitch
-      - EVENT_NAME=optlol_2022
-      - 'FILTERS={"user_logins": ["otplol_","northernarena","kamet0","solary"]}'
-    secrets:
-      - warp10_write_token
-
-  crawler-popcorn:
-    build: .
-    environment:
-      - TWITCH_CLIENT_ID=wkpecccoi7na22y4p2x9f1ek2unkyz
-      - TWITCH_CLIENT_SECRET=7zb3qq2suy922e46x81a638b6k6ix7
-      - WARP10_URL=http://warp10:8080
-      - WARP10_WRITE_TOKEN_FILE=/run/secrets/warp10_write_token
-      - WARP10_PREFIX=twitch
-      - EVENT_NAME=popcorn_2022
-      - 'FILTERS={"user_logins": ["domingo"]}'
-    secrets:
-      - warp10_write_token
-
-  crawler-wat:
-    build: .
-    environment:
-      - TWITCH_CLIENT_ID=wkpecccoi7na22y4p2x9f1ek2unkyz
-      - TWITCH_CLIENT_SECRET=7zb3qq2suy922e46x81a638b6k6ix7
-      - WARP10_URL=http://warp10:8080
-      - WARP10_WRITE_TOKEN_FILE=/run/secrets/warp10_write_token
-      - WARP10_PREFIX=twitch
-      - EVENT_NAME=wat_2022
-      - 'FILTERS={"user_logins": ["unepetitemarie","pawm__"]}'
-    secrets:
-      - warp10_write_token
-
-  crawler-art:
-    build: .
-    environment:
-      - TWITCH_CLIENT_ID=wkpecccoi7na22y4p2x9f1ek2unkyz
-      - TWITCH_CLIENT_SECRET=7zb3qq2suy922e46x81a638b6k6ix7
-      - WARP10_URL=http://warp10:8080
-      - WARP10_WRITE_TOKEN_FILE=/run/secrets/warp10_write_token
-      - WARP10_PREFIX=twitch
-      - EVENT_NAME=twitch_art
-      - 'FILTERS={"languages":["fr"], "game_ids": ["509660"]}'
-    secrets:
-      - warp10_write_token
+      - WARP10_WRITE_TOKEN=$WARP10_WRITE_TOKEN
+      - EVENT_NAME=optlol
+      - USER_LOGINS=otplol_
+    links:
+      - warp10
 
 volumes:
   warp10-data:
-
-secrets:
-  warp10_write_token:
-    file: ./.warp10_write_token

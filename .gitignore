@@ -1,4 +1,5 @@
-/target
-.warp10_write_token
+target
 config.yml
 release.sh
+warp10 
+.env
