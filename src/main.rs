@@ -1,10 +1,19 @@
 use std::collections::HashMap;
 use std::time::Duration;
 use time::OffsetDateTime;
-
-use twitch_rs::{games, streams::{self, StreamFilter}, TwitchApi};
-
 use clap::Parser;
+use twitch_api2::{
+    helix::streams::GetStreamsRequest,
+    HelixClient,
+    types::{
+        CategoryId,
+        UserName
+    },
+};
+use twitch_oauth2::{
+    AppAccessToken,
+    Scope,
+};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -28,13 +37,13 @@ struct CrawlerArgs {
     #[arg(long, env, value_delimiter = ',', help = "Filter streams on user logins")]
     user_logins: Option<Vec<String>>,
     #[arg(long, env, default_value_t = 0, help = "Keep only datapoint viewers count superior to the value")]
-    minimum_viewers: u32,
+    minimum_viewers: usize,
     #[arg(long, env, default_value_t = 15, help = "Interval of seconds between each measurement")]
     interval: u64
 }
 
 impl CrawlerArgs {
-    fn filters(&self) -> Result<Vec<StreamFilter>, ()> {
+    fn filters(&self) -> Result<Vec<GetStreamsRequest>, ()> {
         let games_len = self.game_ids.as_ref().unwrap_or(&[].to_vec()).len();
         let languages_len = self.languages.as_ref().unwrap_or(&[].to_vec()).len();
         let users_len = self.user_logins.as_ref().unwrap_or(&[].to_vec()).len();
@@ -51,17 +60,36 @@ impl CrawlerArgs {
             return Err(());
         }
 
-        let filter = StreamFilter {
-            after: None,
-            before: None,
-            first: Some(100),
-            game_ids: self.game_ids.clone(),
-            languages: self.languages.clone(),
-            user_ids: None,
-            user_logins: self.user_logins.clone(),
+        let languages = if let Some(languages) = &self.languages {
+            Some(languages.join(","))
+        } else { 
+            None
         };
 
-        return Ok(chunk_filters(filter));
+        let mut filters = vec![];
+
+        if let Some(user_logins) = &self.user_logins {
+            for chunk in user_logins.chunks(100) {
+                filters.push(
+                    GetStreamsRequest::builder()
+                        .first(Some(100))
+                        .language(languages.clone())
+                        .game_id(self.game_ids.clone().unwrap_or(vec![]).iter().map(|name| CategoryId::from(name.as_str())).collect())
+                        .user_login(chunk.iter().map(|name| UserName::from(name.as_str())).collect())
+                        .build()
+                );
+            }
+        } else {
+            filters.push(
+                GetStreamsRequest::builder()
+                    .first(Some(100))
+                    .language(languages.clone())
+                    .game_id(self.game_ids.clone().unwrap_or(vec![]).iter().map(|name| CategoryId::from(name.as_str())).collect())
+                    .build()
+            );
+        }
+
+        return Ok(filters);
     } 
 }
 
@@ -71,9 +99,14 @@ async fn main() {
 
     let filters = config.filters().expect("Error with filters");
 
-    let mut api = TwitchApi::new(config.twitch_client_id, config.twitch_client_secret).expect("Failed to create api client");
+    let client: HelixClient<reqwest::Client> = HelixClient::default();
 
-    api.authorize().await.expect("Failed to get access token");
+    let token = AppAccessToken::get_app_access_token(
+        &client,
+        config.twitch_client_id.into(),
+        config.twitch_client_secret.into(),
+        Scope::all()
+    ).await.unwrap();
 
     let warp10_client = warp10::Client::new(&config.warp10_url).expect("Failed to build warp10 client");
     let writer = warp10_client.get_writer(config.warp10_write_token);
@@ -88,51 +121,49 @@ async fn main() {
 
         println!("Retrieve metrics at {}", timestamp);
 
-        for selected_filter in &filters {
-            let mut filter = selected_filter.clone();
+        for req in &filters {
+            let mut filter = req.clone();
             let mut is_finished = false;
 
             while !is_finished {
-                match streams::get(
-                    &api,
-                    &filter
-                )
-                .await {
+                match client.req_get(filter.clone(), &token).await {
                     Ok(responses) => {
                         let mut metrics = Vec::new();
 
                         if responses.data.len() == filter.first.unwrap_or(20) as usize {
-                            is_finished = responses.pagination.cursor.is_none();
-                            filter.after = responses.pagination.cursor.clone();
+                            is_finished = responses.pagination.is_none();
+                            filter.after = responses.pagination.clone();
                         } else {
                             is_finished = true;
                             filter.after = None;
                         }
 
                         for stream in responses.data {
-                            let game_name = if let Some(name) = games_mapping.get(&stream.game_id) {
+                            let game_name = if let Some(name) = games_mapping.get(&stream.game_id.to_string()) {
                                 name.clone()
                             } else {
-                                let name = if let Ok(response) =
-                                    games::get(&api, &vec![stream.game_id.clone()]).await
-                                {
-                                    if let Some(game) = response.data.get(0) {
-                                        game.name.clone()
-                                    } else {
-                                        dbg!(&stream);
+                                let name = match client.get_games_by_id(&vec![stream.game_id.clone()], &token).await {
+                                    Ok(response) => {
+                                        match response.get(&stream.game_id) {
+                                            Some(game) => {
+                                                game.name.clone()
+                                            },
+                                            None => {
+                                                "Pas de catégorie".to_string()
+                                            }
+                                        }
+                                    },
+                                    Err(_) => {
                                         "Pas de catégorie".to_string()
                                     }
-                                } else {
-                                    dbg!(&stream);
-                                    "Pas de catégorie".to_string()
                                 };
 
-                                games_mapping.insert(stream.game_id.clone(), name.clone());
+                                games_mapping.insert(stream.game_id.to_string(), name.clone());
 
                                 name
                             };
 
-                            if stream.viewer_count < config.minimum_viewers as i32 {
+                            if stream.viewer_count < config.minimum_viewers {
                                 is_finished = true;
                                 continue;
                             }
@@ -143,13 +174,13 @@ async fn main() {
                                 format!("{}.viewers", &config.warp10_prefix),
                                 vec![
                                     warp10::Label::new("event_name", &config.event_name),
-                                    warp10::Label::new("stream_id", &stream.id),
-                                    warp10::Label::new("game_id", &stream.game_id),
+                                    warp10::Label::new("stream_id", stream.id.as_str()),
+                                    warp10::Label::new("game_id", stream.game_id.as_str()),
                                     warp10::Label::new("game_name", &game_name),
-                                    warp10::Label::new("user_id", &stream.user_id),
-                                    warp10::Label::new("user_name", &stream.user_login),
+                                    warp10::Label::new("user_id", stream.user_id.as_str()),
+                                    warp10::Label::new("user_name", stream.user_login.as_str()),
                                 ],
-                                warp10::Value::Int(stream.viewer_count),
+                                warp10::Value::Int(stream.viewer_count.try_into().unwrap()),
                             ));
                         }
 
@@ -172,29 +203,4 @@ async fn main() {
             }
         }
     }
-}
-
-fn chunk_filters(filter: streams::StreamFilter) -> Vec<streams::StreamFilter> {
-    let mut filters = Vec::new();
-
-    match &filter.user_logins {
-        Some(user_logins) => {
-            if user_logins.len() > 100 {
-                for chunk in user_logins.chunks(100) {
-                    let mut chunked_filter = filter.clone();
-
-                    chunked_filter.user_logins = Some(chunk.to_vec());
-
-                    filters.push(chunked_filter);
-                }
-            } else {
-                filters.push(filter);
-            }
-        },
-        None => {
-            filters.push(filter);
-        }
-    }
-
-    return filters
 }
