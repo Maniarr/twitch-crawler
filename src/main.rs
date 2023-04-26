@@ -106,7 +106,7 @@ async fn main() {
         config.twitch_client_id.into(),
         config.twitch_client_secret.into(),
         Scope::all()
-    ).await.unwrap();
+    ).await.expect("Failed to get twitch api token");
 
     let warp10_client = warp10::Client::new(&config.warp10_url).expect("Failed to build warp10 client");
     let writer = warp10_client.get_writer(config.warp10_write_token);
