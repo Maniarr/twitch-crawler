@@ -13,7 +13,9 @@ chrono = "*"
 time = "^0.3"
 warp10 = "*"
 isahc = { version = "*", features = ["json"] }
-twitch-rs = { git = "https://github.com/Maniarr/twitch-rs" }
+twitch_api2 = { version = "0.6.1", features = ["client", "helix", "reqwest"] }
+twitch_oauth2 = { version = "0.6.1", features =  ["reqwest"] }
+reqwest = "0.11.4"
 tera = "*"
 openssl = { version = "*", features = ["vendored"] }
 clap = { version = "^4", default-features = true, features = ["derive", "env"] }
