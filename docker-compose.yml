@@ -14,8 +14,10 @@ services:
       - TWITCH_CLIENT_SECRET=$TWITCH_CLIENT_SECRET
       - WARP10_URL=http://warp10:8080
       - WARP10_WRITE_TOKEN=$WARP10_WRITE_TOKEN
-      - EVENT_NAME=optlol
-      - USER_LOGINS=otplol_
+      - EVENT_NAME=twitch
+      - LANGUAGES=fr
+      - GAME_IDS=1469308723
+      - RUST_LOG=twitch_crawler=info
     links:
       - warp10
 
