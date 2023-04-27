@@ -15,6 +15,7 @@ use twitch_oauth2::{
     Scope,
 };
 
+
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct CrawlerArgs {
@@ -49,13 +50,13 @@ impl CrawlerArgs {
         let users_len = self.user_logins.as_ref().unwrap_or(&[].to_vec()).len();
 
         if games_len == 0 && languages_len == 0 && users_len == 0 {
-            eprintln!("No filters are provisionned");
+            log::error!("No filters are provisionned");
 
             return Err(());
         }
 
         if games_len > 100 || languages_len > 100 {
-            eprintln!("GAME_IDS or/and LANGUAGES filters are more than 100 values");
+            log::error!("GAME_IDS or/and LANGUAGES filters are more than 100 values");
 
             return Err(());
         }
@@ -95,6 +96,8 @@ impl CrawlerArgs {
 
 #[actix::main]
 async fn main() {
+    env_logger::init();
+
     let config = CrawlerArgs::parse();
 
     let filters = config.filters().expect("Error with filters");
@@ -119,7 +122,7 @@ async fn main() {
 
         let timestamp = OffsetDateTime::now_utc();
 
-        println!("Retrieve metrics at {}", timestamp);
+        log::info!("Retrieve metrics");
 
         for req in &filters {
             let mut filter = req.clone();
@@ -188,16 +191,16 @@ async fn main() {
 
                         match writer.post_sync(metrics) {
                             Ok(_) => {
-                                println!("{} metrics wrote to warp10", metrics_count);
+                                log::info!("{} metrics wrote to Warp10", metrics_count);
                             }
                             Err(error) => {
-                                eprintln!("Failed to write metrics to warp10");
-                                eprintln!("{:?}", error);
+                                log::error!("Failed to write metrics to Warp10: {}", error.to_string());
+                                log::debug!("{:?}", error);
                             }
                         }
                     }
                     Err(error) => {
-                        eprintln!("{}", error);
+                        log::error!("{}", error);
                     }
                 };
             }

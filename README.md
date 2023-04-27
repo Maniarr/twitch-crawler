@@ -17,7 +17,6 @@ Metric labels available:
 - `user_id`
 - `user_name`
 
-
 ## Build
 
 Rust version: 1.68
@@ -65,6 +64,8 @@ Options:
   -V, --version
           Print version information
 ```
+
+We use `env_logger` crate to handle logging, if you need to have debug logs you can add environment variable `RUST_LOG=twitch_crawler=debug`.
 
 ### Docker
 
