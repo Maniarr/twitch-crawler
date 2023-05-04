@@ -13,8 +13,8 @@ use twitch_api2::{
 use twitch_oauth2::{
     AppAccessToken,
     Scope,
+    TwitchToken,
 };
-
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -96,7 +96,10 @@ impl CrawlerArgs {
 
 #[actix::main]
 async fn main() {
-    env_logger::init();
+    env_logger::init_from_env(
+        env_logger::Env::default()
+            .filter_or(env_logger::DEFAULT_FILTER_ENV, "info")
+    );
 
     let config = CrawlerArgs::parse();
 
@@ -104,10 +107,10 @@ async fn main() {
 
     let client: HelixClient<reqwest::Client> = HelixClient::default();
 
-    let token = AppAccessToken::get_app_access_token(
+    let mut token = AppAccessToken::get_app_access_token(
         &client,
-        config.twitch_client_id.into(),
-        config.twitch_client_secret.into(),
+        config.twitch_client_id.clone().into(),
+        config.twitch_client_secret.clone().into(),
         Scope::all()
     ).await.expect("Failed to get twitch api token");
 
@@ -204,6 +207,18 @@ async fn main() {
                     }
                 };
             }
+        }
+
+        if token.expires_in() < Duration::from_secs(config.interval * 4) {
+            // Twitch app access token don't have refresh token
+            token = AppAccessToken::get_app_access_token(
+                &client,
+                config.twitch_client_id.clone().into(),
+                config.twitch_client_secret.clone().into(),
+                Scope::all()
+            ).await.expect("Failed to refresh twitch api tokens");
+
+            log::info!("Twitch tokens refreshed");
         }
     }
 }
